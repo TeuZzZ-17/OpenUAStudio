@@ -137,6 +137,23 @@ def _image_from_ilbm(img, palette_override=None,
     return qimage.convertToFormat(QImage.Format.Format_ARGB32)
 
 
+def _image_from_effect_png(path) -> QImage | None:
+    """Load an OpenUA HI/ALPHA effect PNG with engine chroma handling."""
+
+    if path is None:
+        return None
+    image = QImage(str(path))
+    if image.isNull():
+        return None
+    image = image.convertToFormat(QImage.Format.Format_RGBA8888)
+    pixels = image.bits()
+    for offset in range(0, image.sizeInBytes(), 4):
+        r, g, b, a = pixels[offset:offset + 4]
+        if a == 0 or (r == 255 and g == 255 and b == 0):
+            pixels[offset:offset + 4] = b"\x00\x00\x00\x00"
+    return image.convertToFormat(QImage.Format.Format_ARGB32)
+
+
 class AssetViewport(QWidget):
     """3D preview of an asset family with polygon picking."""
 
@@ -856,8 +873,13 @@ class AssetViewport(QWidget):
             if anm is not None:
                 for bitmap_name in anm.bitmap_names:
                     img = family.textures.get(bitmap_name)
-                    qimage = _image_from_ilbm(img, family.external_palette
-                                              if img and not img.palette else None)
+                    override = (family.effect_override_paths.get(
+                        bitmap_name.lower()) if mat.additive else None)
+                    qimage = (_image_from_effect_png(override)
+                              if override is not None else
+                              _image_from_ilbm(
+                                  img, family.external_palette
+                                  if img and not img.palette else None))
                     mat.anim_images.append(qimage if qimage else QImage())
                 mat.anim_uv_groups = [list(g) for g in anm.texcoord_groups]
                 mat.anim_frames = [
@@ -870,9 +892,13 @@ class AssetViewport(QWidget):
                     mat.image = mat.anim_images[0]
         elif label:
             img = family.textures.get(label)
-            mat.image = _image_from_ilbm(
-                img, family.external_palette if img and not img.palette else None
-            )
+            override = (family.effect_override_paths.get(label.lower())
+                        if mat.additive else None)
+            mat.image = (_image_from_effect_png(override)
+                         if override is not None else
+                         _image_from_ilbm(
+                             img, family.external_palette
+                             if img and not img.palette else None))
 
         material_index[key] = len(self._materials)
         self._materials.append(mat)
@@ -1034,6 +1060,7 @@ class AssetViewport(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         painter.fillRect(self.rect(), QColor(24, 26, 32))
 
         if not self._faces:
@@ -1097,7 +1124,8 @@ class AssetViewport(QWidget):
                 painter.setBrush(QColor(90, 230, 255, 90))
                 painter.drawPolygon(polygon)
             if self._selected_owner is not None \
-                    and face.owner == self._selected_owner:
+                    and face.owner == self._selected_owner \
+                    and self._mode != "textured":
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(QColor(90, 230, 255, 60))
                 painter.drawPolygon(polygon)

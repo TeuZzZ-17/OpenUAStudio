@@ -90,6 +90,10 @@ class AssetFamily:
     animation_refs: dict[str, ResolvedFile] = field(default_factory=dict)
     # logical texture name -> set of tracy modes of the blocks using it
     texture_tracy_usage: dict[str, set] = field(default_factory=dict)
+    # Modern OpenUA remaps FX1/FX2/FX3 to the set's HI/ALPHA PNGs when
+    # destination blending is available.  Paths are keyed by lowercase
+    # logical bitmap name and consumed only by flat-tracy preview materials.
+    effect_override_paths: dict[str, Path] = field(default_factory=dict)
     # session-only manual resolver overrides actually in effect
     overrides: dict[str, str] = field(default_factory=dict)
     # optional embedded resource provider (read-only SET.BAS archive)
@@ -516,6 +520,38 @@ def _propagate_anm_tracy_usage(family: AssetFamily) -> None:
             family.texture_tracy_usage.setdefault(bitmap_name, set()).update(modes)
 
 
+def _find_engine_effect_overrides(family: AssetFamily) -> None:
+    """Locate the same HI/ALPHA FX PNG overrides used by modern OpenUA."""
+
+    effect_names = {
+        name for name in family.textures
+        if Path(name.replace("\\", "/")).name.lower()
+        in ("fx1.ilbm", "fx2.ilbm", "fx3.ilbm")
+    }
+    if not effect_names:
+        return
+
+    roots: list[Path] = []
+    for value in ([family.base_path, family.setbas_path]
+                  + [Path(p) for p in family.search_roots]):
+        if value is None:
+            continue
+        root = Path(value)
+        if root.is_file():
+            root = root.parent
+        for candidate in (root, *list(root.parents)[:5]):
+            if candidate not in roots:
+                roots.append(candidate)
+
+    for logical_name in effect_names:
+        stem = Path(logical_name.replace("\\", "/")).stem
+        for root in roots:
+            override = root / "HI" / "ALPHA" / f"{stem}.PNG"
+            if override.is_file():
+                family.effect_override_paths[logical_name.lower()] = override
+                break
+
+
 def _collect_textured_diagnostics(family: AssetFamily) -> None:
     """Explain, in user terms, everything that degrades the textured preview."""
 
@@ -674,6 +710,7 @@ def load_asset_family(base_path: str | Path,
         )
 
     _propagate_anm_tracy_usage(family)
+    _find_engine_effect_overrides(family)
     _find_external_palette(family, resolver)
     _collect_textured_diagnostics(family)
     _run_checks(family)
@@ -739,6 +776,7 @@ def load_manual_family(sklt_path: str | Path | None,
         _load_animation(family, resolver, Path(anm).name)
 
     _propagate_anm_tracy_usage(family)
+    _find_engine_effect_overrides(family)
     _find_external_palette(family, resolver)
     _collect_textured_diagnostics(family)
     _run_checks(family)
