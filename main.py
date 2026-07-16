@@ -22,7 +22,9 @@ APP_TITLE = "OpenUAStudio"
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_TITLE)
-    app.setApplicationDisplayName(APP_TITLE)
+    # Each window composes its own full title.  Keep the platform from
+    # appending a second "OpenUAStudio" label to document titles.
+    app.setApplicationDisplayName("")
 
     window = AssemblyWindow()
     window.setWindowTitle(APP_TITLE)

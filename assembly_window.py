@@ -84,6 +84,13 @@ from uv_editor_widget import UVEditorWidget
 
 WINDOW_TITLE = "OpenUAStudio"
 
+
+def _display_path(path: str | Path) -> Path:
+    """Return a stable absolute path for window-title display."""
+
+    return Path(path).expanduser().resolve(strict=False)
+
+
 STATUS_COLORS = {
     "found": QColor(90, 200, 110),
     "manual": QColor(110, 170, 255),
@@ -1130,6 +1137,12 @@ class AssemblyWindow(QMainWindow):
             )
             return
         self._set_family(family)
+        primary_path = (
+            base or sklt or (textures[0] if textures else None)
+            or (anms[0] if anms else None)
+        )
+        if primary_path:
+            self._set_document_title(primary_path)
 
     def open_setbas_dialog(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -1151,6 +1164,7 @@ class AssemblyWindow(QMainWindow):
             self.statusBar().showMessage("SET.BAS parse failed")
             return
         self._setbas = archive
+        self._set_document_title(archive.path)
         self._fill_setbas(archive)
         self._raise_setbas_tab()
         census = archive.census()
@@ -1166,6 +1180,9 @@ class AssemblyWindow(QMainWindow):
         if self._family and self._family.base_path:
             # Re-resolve the current family with the archive as fallback.
             self.open_base(self._family.base_path)
+            # The archive is the file the user just opened, so keep its path
+            # visible after the internal family refresh.
+            self._set_document_title(archive.path)
 
     def _raise_setbas_tab(self) -> None:
         """Bring the primary BAS panel to the front after loading it."""
@@ -3485,6 +3502,15 @@ class AssemblyWindow(QMainWindow):
 
     # -- family -> panels --------------------------------------------------------
 
+    def _set_document_title(self, path: str | Path | None) -> None:
+        if path is None:
+            self.setWindowTitle(WINDOW_TITLE)
+            return
+        full_path = _display_path(path)
+        self.setWindowTitle(
+            f"{WINDOW_TITLE} - {full_path.name} - {full_path}"
+        )
+
     def _set_family(self, family: AssetFamily) -> None:
         self._family = family
         self._diff = None
@@ -3552,8 +3578,9 @@ class AssemblyWindow(QMainWindow):
         status, _details = self._completeness(family)
         self._log(f"loaded {family.base_path}: {status}")
 
-        name = family.base_path.name if family.base_path else "manual family"
-        self.setWindowTitle(f"{WINDOW_TITLE} - {name}")
+        title_path = family.base_path or family.setbas_path
+        self._set_document_title(title_path)
+        name = title_path.name if title_path else "manual family"
         diag = (f", textured preview incomplete "
                 f"({len(family.textured_diagnostics)} issue(s), see Resolve)"
                 if family.textured_diagnostics else "")

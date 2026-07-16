@@ -646,14 +646,18 @@ class WireframeEditorWindow(QMainWindow):
     def _update_window_title(self) -> None:
         dirty_marker = " *" if self.outline_editor.is_dirty else ""
         if self._current_file_path:
-            name = self._current_file_path.name
-        elif self._current_model:
-            name = "Untitled.SKL"
-        else:
-            self.setWindowTitle(APP_TITLE)
+            full_path = self._current_file_path.expanduser().resolve(
+                strict=False
+            )
+            self.setWindowTitle(
+                f"{APP_TITLE} - {full_path.name} - "
+                f"{full_path}{dirty_marker}"
+            )
             return
-
-        self.setWindowTitle(f"{APP_TITLE} - {name}{dirty_marker}")
+        if self._current_model:
+            self.setWindowTitle(f"{APP_TITLE} - Untitled.SKL{dirty_marker}")
+            return
+        self.setWindowTitle(APP_TITLE)
 
     def reset_active_view(self) -> None:
         # Reset must restore the loaded point data in both 2D and 3D mode.
@@ -679,6 +683,8 @@ class WireframeEditorWindow(QMainWindow):
 
 def main() -> int:
     app = QApplication(sys.argv)
+    app.setApplicationName("OpenUAStudio")
+    app.setApplicationDisplayName("")
     window = WireframeEditorWindow()
     window.show()
 
